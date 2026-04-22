@@ -3,38 +3,38 @@ from bs4 import BeautifulSoup
 import time
 
 # Library of verified online sources
-# These point to public domain or stable archive text versions
-ethiopian_canon = {
-    "Genesis (KJV)": "https://www.gutenberg.org/files/10/10-h/10-h.htm#chap01",
+# These links are structured for direct text access
+bible_canon = {
+    "Genesis (KJV)": "https://www.gutenberg.org/files/8001/8001-h/8001-h.htm",
     "Book of Enoch": "https://www.gutenberg.org/ebooks/77815.txt.utf-8",
-    "Book of Jubilees": "https://sacred-texts.com/bib/jub/jub01.htm",
-    # Note: Meqabyan requires specific academic/archive links
-    "Meqabyan_I": "https://archive.org/stream/TheFirstEthiopianBookOfMeqabyan/Meqabyan1_djvu.txt"
+    "Book of Jubilees": "https://sacred-texts.com/bib/jub/jub01.htm"
 }
 
 def search_online_canon(search_term):
-    for book_name, url in ethiopian_canon.items():
+    print(f"Starting search for: '{search_term}'")
+    for book_name, url in bible_canon.items():
         try:
             print(f"Searching {book_name}...")
-            response = requests.get(url, timeout=15)
+            response = requests.get(url, timeout=10)
             
-            # Simple cleaning for HTML or raw text
-            if "gutenberg.org" in url or "sacred-texts.com" in url:
-                soup = BeautifulSoup(response.content, "html.parser")
-                text = soup.get_text()
-            else:
-                text = response.text
+            # Extract text
+            soup = BeautifulSoup(response.content, "html.parser")
+            text = soup.get_text()
             
-            if search_term in text:
+            # Simple containment check
+            if search_term.lower() in text.lower():
                 print(f"--- MATCH FOUND in {book_name} ---")
+                return True # Stop at the first result
             
-            # Throttle to be kind to the servers
-            time.sleep(2)
+            time.sleep(1) # Be kind to the servers
             
         except Exception as e:
             print(f"Could not access {book_name}: {e}")
+    
+    print("No matches found.")
+    return False
 
-# Search Execution
+# Execute
 if __name__ == "__main__":
     search_term = "Israel"
     search_online_canon(search_term)
