@@ -1,33 +1,40 @@
 import requests
 from bs4 import BeautifulSoup
+import time
 
-# Define your library of online sources
-# Replace these URLs with the direct text links for your chosen versions
-bible_canon = {
-    "Genesis": "https://example.com/genesis_text_link",
-    "Exodus": "https://example.com/exodus_text_link",
-    "Enoch": "https://example.com/enoch_text_link",
-    # Add all 81 books here
+# Library of verified online sources
+# These point to public domain or stable archive text versions
+ethiopian_canon = {
+    "Genesis (KJV)": "https://www.gutenberg.org/files/10/10-h/10-h.htm#chap01",
+    "Book of Enoch": "https://www.gutenberg.org/ebooks/77815.txt.utf-8",
+    "Book of Jubilees": "https://sacred-texts.com/bib/jub/jub01.htm",
+    # Note: Meqabyan requires specific academic/archive links
+    "Meqabyan_I": "https://archive.org/stream/TheFirstEthiopianBookOfMeqabyan/Meqabyan1_djvu.txt"
 }
 
 def search_online_canon(search_term):
-    for book_name, url in bible_canon.items():
+    for book_name, url in ethiopian_canon.items():
         try:
             print(f"Searching {book_name}...")
-            response = requests.get(url, timeout=10)
+            response = requests.get(url, timeout=15)
             
-            # Clean the text
-            soup = BeautifulSoup(response.content, "html.parser")
-            text = soup.get_text()
+            # Simple cleaning for HTML or raw text
+            if "gutenberg.org" in url or "sacred-texts.com" in url:
+                soup = BeautifulSoup(response.content, "html.parser")
+                text = soup.get_text()
+            else:
+                text = response.text
             
-            # Perform the search
             if search_term in text:
                 print(f"--- MATCH FOUND in {book_name} ---")
-                # Add logic here to display or save the match
-        
+            
+            # Throttle to be kind to the servers
+            time.sleep(2)
+            
         except Exception as e:
             print(f"Could not access {book_name}: {e}")
 
-# Execute
-search_term = "Israel"
-search_online_canon(search_term)
+# Search Execution
+if __name__ == "__main__":
+    search_term = "Israel"
+    search_online_canon(search_term)
