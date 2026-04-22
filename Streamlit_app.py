@@ -19,7 +19,7 @@ if st.button("Run Search"):
     
     found = False
     # ELS Algorithm Logic
-    for skip in range(1, 501):
+    for skip in range(1, 4001):
         for start in range(skip):
             seq = text[start::skip]
             if hebrew_name in seq:
