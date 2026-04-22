@@ -1,27 +1,47 @@
 import streamlit as st
 import requests
-from bs4 import BeautifulSoup
-import time
 import re
+import time
 
-# ... (keep your dictionary and headers the same) ...
+st.title("EOTC Canon: Safe Search")
 
-def stride_search(text, term, stride=5):
-    """
-    Looks for the term by jumping 'stride' characters at a time.
-    stride=1 is a normal search. 
-    stride=5 skips 4 characters between each match.
-    """
-    results = []
-    # Clean the text: remove newlines and extra spaces
-    clean_text = re.sub(r'\s+', '', text)
-    
-    # Simple search for the term
-    # If you want to search for the term ITSELF in a skip pattern,
-    # we would need to stride-scan the whole text.
-    if term.lower() in clean_text.lower():
-        return f"Found '{term}' in the text!"
-    return None
+# Using 'with' block for connection management to prevent hanging
+def get_text_safely(url):
+    try:
+        # User-Agent is mandatory for academic/archival sites
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        with requests.get(url, headers=headers, timeout=5) as r:
+            if r.status_code == 200:
+                return r.text
+            return None
+    except:
+        return None
 
-# Use this logic in your loop:
-# match_found = stride_search(text, search_term, stride=1)
+bible_canon = {
+    "Genesis (KJV)": "https://www.gutenberg.org/files/10/10-h/10-h.htm",
+    "Enoch": "https://www.ccel.org/c/charles/otpseudepig/enoch/ENOCH_1.HTM",
+    "Jubilees": "https://www.pseudepigrapha.com/jubilees/index.htm"
+}
+
+search_term = st.text_input("Enter search term:")
+
+if st.button("Start Search"):
+    for book, url in bible_canon.items():
+        st.write(f"Checking {book}...")
+        text = get_text_safely(url)
+        
+        if text:
+            # Look for term + following string
+            pattern = re.compile(rf"{re.escape(search_term)}(.*)", re.IGNORECASE | re.DOTALL)
+            match = pattern.search(text)
+            
+            if match:
+                st.success(f"Found in {book}:")
+                # Showing the first 500 chars after the match
+                st.code(match.group(1)[:500])
+            else:
+                st.write(f"No match in {book}")
+        else:
+            st.warning(f"Could not reach {book} (Server blocked or slow).")
+        
+        time.sleep(0.5)
