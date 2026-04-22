@@ -13,7 +13,7 @@ bible_canon = {
 }
 
 target = st.text_input("Enter target pattern (e.g., HITLER):").upper()
-max_stride = st.number_input("Max stride depth:", min_value=1, max_value=500, value=50)
+max_stride = st.number_input("Max stride depth:", min_value=1, max_value=5000, value=50)
 
 def get_clean_text(url):
     try:
