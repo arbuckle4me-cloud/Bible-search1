@@ -14,23 +14,24 @@ if st.button("Run Search"):
     # Pull the WLC source
     url = "https://raw.githubusercontent.com/openscriptures/morphhb/master/wlc/wlc.txt"
     response = requests.get(url)
-    # Keeping only Hebrew characters
+    # Keeping only pure Hebrew characters
     text = "".join(filter(lambda char: '\u0590' <= char <= '\u05EA', response.text))
     
     found = False
-    # ELS Algorithm Logic
-    for skip in range(1, 4001):
-        for start in range(skip):
-            seq = text[start::skip]
-            if hebrew_name in seq:
-                idx = seq.find(hebrew_name)
-                # Show a snippet of where it was found
-                context = seq[idx : idx + len(hebrew_name) + 10]
-                st.success(f"Match found at Skip {skip}!")
-                st.write(f"Context: {context}")
-                found = True
-                break
-        if found: break
+    with st.spinner("Searching up to 5000 skips..."):
+        # ELS Algorithm Logic - extended to 5001
+        for skip in range(1, 5001):
+            for start in range(skip):
+                seq = text[start::skip]
+                if hebrew_name in seq:
+                    idx = seq.find(hebrew_name)
+                    # Show a snippet of where it was found
+                    context = seq[idx : idx + len(hebrew_name) + 15]
+                    st.success(f"Match found at Skip {skip}!")
+                    st.write(f"Context: {context}")
+                    found = True
+                    break
+            if found: break
     
     if not found:
-        st.write("No matches found.")
+        st.error("No matches found within 5000 skips.")
