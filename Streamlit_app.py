@@ -3,6 +3,7 @@ import requests
 import re
 import nltk
 from nltk.corpus import words
+from bs4 import BeautifulSoup
 
 # Setup
 @st.cache_resource
@@ -12,16 +13,24 @@ def get_word_list():
 
 word_list = get_word_list()
 
-st.title("API-Based ELS Scanner")
+st.title("Universal ELS Archive Scanner")
 
-# UI Inputs
-name_to_search = st.text_input("Name/Pattern to Search:", "CURT STREHLAU").upper()
-book_chapter = st.text_input("Bible Book & Chapter (e.g., John 1):", "Genesis 1")
+# Pre-populated sources
+default_sources = (
+    "https://www.gutenberg.org/ebooks/search/?query=bible\n"
+    "https://www.gutenberg.org/ebooks/search/?query=quran\n"
+    "https://www.gutenberg.org/ebooks/search/?query=enoch\n"
+    "https://www.gutenberg.org/ebooks/search/?query=jubilees"
+)
+
+name_to_search = st.text_input("Name/Pattern:", "CURT STREHLAU").upper().replace(" ", "")
+sources = st.text_area("Source URLs (Gutenberg Search Pages):", default_sources, height=150)
 min_stride = st.number_input("Min Stride:", value=1)
-max_stride = st.number_input("Max Stride:", value=100)
+max_stride = st.number_input("Max Stride:", value=500)
+
+results_log = []
 
 def colorize(sequence):
-    """Highlights dictionary words found in the sequence in blue."""
     tokens = re.split(r'([^a-zA-Z0-9])', sequence)
     formatted = []
     for t in tokens:
@@ -31,38 +40,46 @@ def colorize(sequence):
             formatted.append(t)
     return "".join(formatted)
 
-if st.button("Scan API Data"):
-    # API Call
-    url = f"https://bible-api.com/{book_chapter}"
-    response = requests.get(url)
+if st.button("Scan All Sources & Save Results"):
+    links = []
+    for root in sources.split('\n'):
+        try:
+            soup = BeautifulSoup(requests.get(root.strip(), timeout=10).text, 'html.parser')
+            for a in soup.find_all('a', href=re.compile(r'/ebooks/\d+')):
+                if 'txt' in a.get('href', ''): # Simple filter for text files
+                    links.append("https://www.gutenberg.org" + a['href'])
+        except: continue
     
-    if response.status_code == 200:
-        data = response.json()
-        full_text = data['text'].upper()
-        clean_text = re.sub(r'[^A-Z]', '', full_text)
-        name = name_to_search.replace(" ", "")
-        
-        st.write(f"Scanning {book_chapter}...")
-        
-        found = False
-        first_char = name[0]
-        for start in [m.start() for m in re.finditer(first_char, clean_text)]:
-            for stride in range(min_stride, max_stride + 1):
-                if start + (len(name) * stride) >= len(clean_text):
-                    break
-                
-                match = True
-                for idx, char in enumerate(name):
-                    if clean_text[start + (idx * stride)] != char:
-                        match = False
-                        break
-                
-                if match:
-                    found = True
-                    st.success(f"MATCH: {name_to_search} at Stride {stride}")
-                    st.markdown(colorize(clean_text[start : start + (len(name)*stride)]))
-        
-        if not found:
-            st.warning("No ELS match found in this chapter with current settings.")
+    st.write(f"Scanning {len(links)} documents...")
+    
+    for link in links:
+        try:
+            text = requests.get(link, timeout=10).text.upper()
+            clean_text = re.sub(r'[^A-Z]', '', text)
+            
+            for start in [m.start() for m in re.finditer(name_to_search[0], clean_text)]:
+                for stride in range(min_stride, max_stride + 1):
+                    match = True
+                    for idx, char in enumerate(name_to_search):
+                        pos = start + (idx * stride)
+                        if pos >= len(clean_text) or clean_text[pos] != char:
+                            match = False; break
+                    
+                    if match:
+                        result_str = f"Match in {link} at stride {stride}\nSequence: {clean_text[start : start + (len(name_to_search)*stride)]}"
+                        st.success(f"Match found!")
+                        st.markdown(colorize(clean_text[start : start + (len(name_to_search)*stride)]))
+                        results_log.append(result_str)
+        except: continue
+
+    # File Download
+    if results_log:
+        full_report = "\n\n---\n\n".join(results_log)
+        st.download_button(
+            label="Download Results as Text File",
+            data=full_report,
+            file_name="ELS_Results.txt",
+            mime="text/plain"
+        )
     else:
-        st.error("Could not reach Bible API. Check your book/chapter format.")
+        st.warning("No matches found.")
