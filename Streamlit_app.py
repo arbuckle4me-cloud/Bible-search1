@@ -13,23 +13,23 @@ def get_word_list():
 
 word_list = get_word_list()
 
-st.title("ELS Full-Text Skip Processor")
+st.title("ELS Full-Text Skip Processor (Final)")
 
 # Inputs
+name_to_search = st.text_input("Name/Pattern:", "CURT STREHLAU").upper().replace(" ", "")
 max_stride_input = st.number_input("Max Stride Limit:", value=5000)
 sources_input = st.text_area("URLs:", "https://www.gutenberg.org/ebooks/search/?query=bible", height=100)
 
 def colorize_groups(text):
-    # This function looks for word patterns in the extracted ELS sequence
-    # and wraps them in blue if they exist in the dictionary
-    words = re.findall(r'[A-Z]{3,}', text) # Looks for 3+ letter sequences
+    # Extracts the sequence and highlights words from the dictionary in blue
+    words = re.findall(r'[A-Z]{3,}', text)
     formatted = text
     for word in words:
         if word.lower() in word_list:
             formatted = formatted.replace(word, f"$\color{{blue}}{{{word}}}$")
     return formatted
 
-if st.button("RUN FULL TEXT SCAN"):
+if st.button("RUN FULL SCAN"):
     urls = [line.strip() for line in sources_input.split('\n') if line.strip()]
     headers = {'User-Agent': 'Mozilla/5.0'}
     
@@ -45,17 +45,15 @@ if st.button("RUN FULL TEXT SCAN"):
                     txt_url = urljoin("https://www.gutenberg.org", txt_match.group(1))
                     text_content = re.sub(r'[^A-Z]', '', requests.get(txt_url).text.upper())
                     
-                    st.write(f"--- Processing: {txt_url.split('/')[-1]} ---")
+                    st.write(f"### Analyzing: {txt_url.split('/')[-1]}")
                     
-                    # Apply stride to the full text
+                    # Apply stride to the full text from the start
                     for stride in range(1, max_stride_input + 1):
-                        # Construct the skip sequence for the entire text
                         els_sequence = text_content[::stride]
                         
-                        # Check if this sequence contains recognizable word groups
-                        # We only display if we find something substantial
-                        if len(els_sequence) > 10:
-                            st.markdown(f"**Stride {stride}:**")
+                        # Display if the sequence contains the pattern or recognized words
+                        if name_to_search in els_sequence or any(w.upper() in els_sequence for w in list(word_list)[:50]):
+                            st.markdown(f"**Stride {stride} Found:**")
                             st.markdown(colorize_groups(els_sequence))
-                            time.sleep(0.1) # Pace the output
+                            st.divider()
         except Exception as e: st.error(f"Error: {e}")
