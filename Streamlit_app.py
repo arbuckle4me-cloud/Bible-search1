@@ -1,60 +1,32 @@
-import streamlit as st
-import requests
-import re
-import nltk
-from nltk.corpus import words
-from bs4 import BeautifulSoup
-
-# Setup
-@st.cache_resource
-def get_word_list():
-    nltk.download('words')
-    return set(words.words())
-
-word_list = get_word_list()
-
-st.title("Universal ELS Scanner")
-
-# UI
-roots = st.text_area("Root URLs (one per line):", "https://www.gutenberg.org/ebooks/subject/7")
-name_to_search = st.text_input("Name to search (e.g., CURT STREHLAU):").upper()
-min_stride = st.number_input("Min Stride:", value=1)
-max_stride = st.number_input("Max Stride:", value=5000)
-
-def colorize(sequence):
-    tokens = re.split(r'([^a-zA-Z0-9])', sequence)
-    formatted = []
-    for t in tokens:
-        if t.lower() in word_list and len(t) > 2:
-            formatted.append(f"$\color{{blue}}{{{t.upper()}}}$")
-        else:
-            formatted.append(t)
-    return "".join(formatted)
-
+# Replace your current loop inside the button with this:
 if st.button("Execute Full Scan"):
-    # Crawler Logic
-    response = requests.get(roots.strip())
-    soup = BeautifulSoup(response.text, 'html.parser')
-    links = ["https://www.gutenberg.org" + a['href'] for a in soup.find_all('a', href=re.compile(r'\.txt$'))]
+    # ... (Crawler and Link setup remains the same)
     
-    progress = st.progress(0)
     for i, link in enumerate(links):
-        st.write(f"Scanning: {link}")
+        status = st.empty()
+        status.text(f"Scanning: {link}...")
         try:
-            text = requests.get(link).text.upper()
+            text = requests.get(link, timeout=5).text.upper() # Added 5s timeout
             clean_text = re.sub(r'[^A-Z]', '', text)
             
-            # ELS Search Logic
-            name = name_to_search.replace(" ", "")
-            for stride in range(min_stride, max_stride + 1):
-                for start in range(len(clean_text) - (len(name) * stride)):
+            # Optimized Scan: Search for the first letter of your name first
+            # to skip files where the name can't possibly exist
+            first_char = name_to_search[0]
+            for start in [m.start() for m in re.finditer(first_char, clean_text)]:
+                for stride in range(min_stride, max_stride + 1):
+                    # Check if the name fits in the remaining text
+                    if start + (len(name_to_search) * stride) >= len(clean_text):
+                        break
+                    
+                    # Verify the full sequence
                     match = True
-                    for idx, char in enumerate(name):
+                    for idx, char in enumerate(name_to_search):
                         if clean_text[start + (idx * stride)] != char:
                             match = False; break
                     if match:
-                        st.success(f"MATCH: {name} at Stride {stride}")
-                        st.markdown(colorize(clean_text[start : start + (len(name)*stride)]))
-        except Exception as e:
-            st.error(f"Failed: {link}")
+                        st.success(f"MATCH FOUND! {name_to_search} at Stride {stride} in {link}")
+                        # Display context
+                        st.markdown(colorize(clean_text[start : start + (len(name_to_search)*stride)]))
+        except Exception:
+            continue 
         progress.progress((i + 1) / len(links))
