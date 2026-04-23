@@ -13,7 +13,7 @@ def get_word_list():
 
 word_list = get_word_list()
 
-st.title("Advanced ELS Matrix Scanner (Unlimited)")
+st.title("Advanced ELS Matrix Scanner")
 
 name_to_search = st.text_input("Target Pattern:", "").upper().replace(" ", "")
 max_stride_input = st.number_input("Max Stride Limit:", value=5000, min_value=1)
@@ -33,44 +33,52 @@ def colorize_sequence(sequence):
             formatted_seq = formatted_seq.replace(w, f"$\color{{blue}}{{{w}}}$")
     return formatted_seq
 
-with st.expander("SCANNER"):
-    if st.button("EXECUTE FULL ARCHIVE SCAN"):
-        st.session_state.results_log = [] 
-        urls = [line.strip() for line in sources_input.split('\n') if line.strip()]
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        
-        for base_url in urls:
-            next_url = base_url
-            while next_url:
-                response = requests.get(next_url, headers=headers)
-                soup = BeautifulSoup(response.text, 'html.parser')
+# Progress display
+status_text = st.empty()
+progress_bar = st.progress(0)
+
+if st.button("EXECUTE FULL ARCHIVE SCAN"):
+    st.session_state.results_log = [] 
+    urls = [line.strip() for line in sources_input.split('\n') if line.strip()]
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    
+    total_urls = len(urls)
+    for u_idx, base_url in enumerate(urls):
+        next_url = base_url
+        while next_url:
+            status_text.text(f"Scanning library: {next_url}")
+            response = requests.get(next_url, headers=headers)
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            book_links = soup.find_all('a', href=re.compile(r'/ebooks/\d+'))
+            for b_idx, a in enumerate(book_links):
+                book_link = urljoin("https://www.gutenberg.org", a['href'])
+                page = requests.get(book_link, headers=headers)
+                txt_match = re.search(r'href="(.*?\.txt)"', page.text)
                 
-                # Process all books on current page
-                book_links = soup.find_all('a', href=re.compile(r'/ebooks/\d+'))
-                for a in book_links:
-                    book_link = urljoin("https://www.gutenberg.org", a['href'])
-                    page = requests.get(book_link, headers=headers)
-                    txt_match = re.search(r'href="(.*?\.txt)"', page.text)
+                if txt_match:
+                    txt_url = urljoin("https://www.gutenberg.org", txt_match.group(1))
+                    clean_text = re.sub(r'[^A-Z]', '', requests.get(txt_url, headers=headers).text.upper())
                     
-                    if txt_match:
-                        txt_url = urljoin("https://www.gutenberg.org", txt_match.group(1))
-                        time.sleep(0.5)
-                        clean_text = re.sub(r'[^A-Z]', '', requests.get(txt_url, headers=headers).text.upper())
-                        
-                        for start in [m.start() for m in re.finditer(name_to_search[0], clean_text)]:
-                            for stride in range(1, max_stride_input + 1):
-                                # ... (Scan logic remains same) ...
-                                if all(clean_text[start + (idx * stride)] == char 
-                                       for idx, char in enumerate(name_to_search)):
+                    for start in [m.start() for m in re.finditer(name_to_search[0], clean_text)]:
+                        for stride in range(1, max_stride_input + 1):
+                            # Safety check: ensure sequence does not exceed text length
+                            max_pos = start + ((len(name_to_search) - 1) * stride)
+                            if max_pos < len(clean_text):
+                                if all(clean_text[start + (idx * stride)] == char for idx, char in enumerate(name_to_search)):
                                     phase_start = start % stride
                                     full_sequence = clean_text[phase_start::stride]
-                                    st.markdown(f"**Found in {txt_url.split('/')[-1]} | Stride: {stride}**")
+                                    
+                                    msg = f"Found: {txt_url.split('/')[-1]} | Stride: {stride}"
+                                    st.markdown(f"**{msg}**")
                                     st.markdown(colorize_sequence(full_sequence))
-                                    st.session_state.results_log.append(f"{txt_url}\n{full_sequence}")
+                                    st.session_state.results_log.append(f"{msg}\n\n{full_sequence}\n")
 
-                # Check for "Next" page
-                next_tag = soup.find('a', string="Next")
-                next_url = urljoin("https://www.gutenberg.org/ebooks/", next_tag['href']) if next_tag else None
+            # Follow next page
+            next_tag = soup.find('a', string="Next")
+            next_url = urljoin("https://www.gutenberg.org/ebooks/", next_tag['href']) if next_tag else None
+            progress_bar.progress((u_idx + 1) / total_urls)
 
 if st.session_state.results_log:
-    st.download_button("DOWNLOAD RESULTS", "\n\n".join(st.session_state.results_log), "Results.txt")
+    file_name = st.text_input("Save As:", "ELS_Results.txt")
+    st.download_button("DOWNLOAD RESULTS", "\n\n---\n\n".join(st.session_state.results_log), file_name)
