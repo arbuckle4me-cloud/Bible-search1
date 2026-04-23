@@ -1,34 +1,43 @@
 import streamlit as st
 import requests
 import re
+import nltk # Standard for word detection
+from nltk.corpus import words
 
-st.title("Live Stream Pattern Hunter")
+# Setup: Download dictionary if not present
+try:
+    nltk.data.find('corpora/words')
+except LookupError:
+    nltk.download('words')
+    
+word_list = set(words.words())
 
-# This is a list of direct stream links (not download pages)
-urls = [
-    "https://www.gutenberg.org/cache/epub/10/pg10.txt", # KJV
-    "https://www.gutenberg.org/cache/epub/17/pg17.txt", # Book of Mormon
-    "https://www.gutenberg.org/cache/epub/16955/pg16955.txt" # Quran
-]
+st.title("Max-Stride Explorer (Stride 5000)")
 
-target = st.text_input("Pattern:").upper()
-stride = st.number_input("Stride:", value=10)
+def colorize_and_preserve(sequence):
+    """
+    Looks for English words in the sequence. 
+    Highlights found words in blue, keeps everything else (including spaces/scrambles).
+    """
+    # Regex to find sequences of letters
+    tokens = re.split(r'([^A-Z])', sequence)
+    formatted = []
+    
+    for token in tokens:
+        # If it's a word and in our massive dictionary, make it blue
+        if token.lower() in word_list and len(token) > 2:
+            formatted.append(f"$\color{{blue}}{{{token.upper()}}}$")
+        else:
+            formatted.append(token)
+    return "".join(formatted)
 
-if st.button("Start Live Scan"):
-    for url in urls:
-        st.write(f"Streaming {url}...")
-        # Stream=True tells Python to NOT save the file
-        with requests.get(url, stream=True) as r:
-            # Process the text in chunks of 1024 bytes
-            text = ""
-            for chunk in r.iter_content(chunk_size=1024, decode_unicode=True):
-                if chunk:
-                    # Search logic on the fly
-                    text += chunk
-                    # Clear 'text' if it gets too large to save memory
-                    if len(text) > 10000:
-                        text = text[-2000:]
-            
-            # The search logic goes here
-            # ...
-            st.success(f"Finished streaming and scanning {url}")
+# UI
+target = st.text_input("Target Pattern:").upper()
+stride = st.number_input("Stride:", min_value=1, max_value=5000, value=5000)
+
+if st.button("Execute Max-Stride Stream"):
+    # Stream logic here
+    # 1. Fetch text
+    # 2. Extract char every 5000
+    # 3. Apply colorize_and_preserve()
+    st.markdown(f"**Result Preview:** {colorize_and_preserve(raw_extracted_data)}")
