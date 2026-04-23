@@ -13,47 +13,87 @@ def get_word_list():
 
 word_list = get_word_list()
 
-st.title("ELS Full-Text Skip Processor (Final)")
+st.title("Advanced ELS Matrix Scanner")
 
-# Inputs
-name_to_search = st.text_input("Name/Pattern:", "CURT STREHLAU").upper().replace(" ", "")
-max_stride_input = st.number_input("Max Stride Limit:", value=5000)
-sources_input = st.text_area("URLs:", "https://www.gutenberg.org/ebooks/search/?query=bible", height=100)
+# Core Inputs
+name_to_search = st.text_input("Target Pattern:", "CURT STREHLAU").upper().replace(" ", "")
+max_stride_input = st.number_input("Max Stride Limit:", value=5000, min_value=1)
+sources_input = st.text_area("Source URLs:", "https://www.gutenberg.org/ebooks/search/?query=bible", height=100)
 
-def colorize_groups(text):
-    # Extracts the sequence and highlights words from the dictionary in blue
-    words = re.findall(r'[A-Z]{3,}', text)
-    formatted = text
-    for word in words:
-        if word.lower() in word_list:
-            formatted = formatted.replace(word, f"$\color{{blue}}{{{word}}}$")
-    return formatted
+# Memory State
+if 'results_log' not in st.session_state:
+    st.session_state.results_log = []
 
-if st.button("RUN FULL SCAN"):
-    urls = [line.strip() for line in sources_input.split('\n') if line.strip()]
-    headers = {'User-Agent': 'Mozilla/5.0'}
-    
-    for url in urls:
-        try:
-            soup = BeautifulSoup(requests.get(url, headers=headers).text, 'html.parser')
-            for a in soup.find_all('a', href=re.compile(r'/ebooks/\d+')):
-                book_link = urljoin("https://www.gutenberg.org", a['href'])
-                page = requests.get(book_link, headers=headers)
-                txt_match = re.search(r'href="(.*?\.txt)"', page.text)
+col1, col2 = st.columns(2)
+
+def colorize_sequence(sequence):
+    words = re.findall(r'[A-Z]{3,}', sequence)
+    formatted_seq = sequence
+    # Sort by length descending to prevent sub-word overwrite errors
+    for w in sorted(set(words), key=len, reverse=True):
+        if w.lower() in word_list:
+            formatted_seq = formatted_seq.replace(w, f"$\color{{blue}}{{{w}}}$")
+    return formatted_seq
+
+with col1:
+    if st.button("EXECUTE SCAN"):
+        st.session_state.results_log = [] 
+        urls = [line.strip() for line in sources_input.split('\n') if line.strip()]
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        status_text = st.empty()
+        
+        for url in urls:
+            try:
+                soup = BeautifulSoup(requests.get(url, headers=headers, timeout=20).text, 'html.parser')
+                book_links = soup.find_all('a', href=re.compile(r'/ebooks/\d+'))
                 
-                if txt_match:
-                    txt_url = urljoin("https://www.gutenberg.org", txt_match.group(1))
-                    text_content = re.sub(r'[^A-Z]', '', requests.get(txt_url).text.upper())
+                for i, a in enumerate(book_links):
+                    book_link = urljoin("https://www.gutenberg.org", a['href'])
+                    status_text.text(f"Scanning Book {i+1}/{len(book_links)}: {book_link.split('/')[-1]}")
                     
-                    st.write(f"### Analyzing: {txt_url.split('/')[-1]}")
+                    page = requests.get(book_link, headers=headers, timeout=15)
+                    txt_match = re.search(r'href="(.*?\.txt)"', page.text)
                     
-                    # Apply stride to the full text from the start
-                    for stride in range(1, max_stride_input + 1):
-                        els_sequence = text_content[::stride]
+                    if txt_match:
+                        txt_url = urljoin("https://www.gutenberg.org", txt_match.group(1))
+                        time.sleep(1) # Network pacing bypasses server blocks
+                        raw_text = requests.get(txt_url, headers=headers, timeout=20).text.upper()
+                        clean_text = re.sub(r'[^A-Z]', '', raw_text)
                         
-                        # Display if the sequence contains the pattern or recognized words
-                        if name_to_search in els_sequence or any(w.upper() in els_sequence for w in list(word_list)[:50]):
-                            st.markdown(f"**Stride {stride} Found:**")
-                            st.markdown(colorize_groups(els_sequence))
-                            st.divider()
-        except Exception as e: st.error(f"Error: {e}")
+                        for start in [m.start() for m in re.finditer(name_to_search[0], clean_text)]:
+                            for stride in range(1, max_stride_input + 1):
+                                match = True
+                                for idx, char in enumerate(name_to_search):
+                                    pos = start + (idx * stride)
+                                    if pos >= len(clean_text) or clean_text[pos] != char:
+                                        match = False
+                                        break
+                                
+                                if match:
+                                    # Calculate true start of the file for this specific stride offset
+                                    phase_start = start % stride
+                                    full_sequence = clean_text[phase_start::stride]
+                                    
+                                    header_info = f"Target matched in {txt_url.split('/')[-1]} | Stride: {stride} | Phase Offset: {phase_start}"
+                                    st.write(f"### {header_info}")
+                                    st.markdown(colorize_sequence(full_sequence))
+                                    
+                                    # Plain text log for clean file saving
+                                    st.session_state.results_log.append(f"{header_info}\n\n{full_sequence}\n")
+
+            except Exception as e:
+                st.error(f"Network Fault at {url}: {e}")
+                
+        status_text.text("Scan Complete.")
+
+with col2:
+    if st.session_state.results_log:
+        file_name_input = st.text_input("Save Output As:", "ELS_Master_Log.txt")
+        st.download_button(
+            label="DOWNLOAD TEXT LOG",
+            data="\n\n---\n\n".join(st.session_state.results_log),
+            file_name=file_name_input,
+            mime="text/plain"
+        )
+    else:
+        st.info("Awaiting structural match to enable download.")
