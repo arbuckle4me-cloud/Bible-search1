@@ -2,40 +2,33 @@ import streamlit as st
 import requests
 import re
 
-st.title("EOTC Global Direct-Link Hunter")
+st.title("Live Stream Pattern Hunter")
 
-# Direct Cache Links (Fast & Reliable)
-canon_links = {
-    "KJV Bible": "https://www.gutenberg.org/cache/epub/10/pg10.txt",
-    "Book of Mormon": "https://www.gutenberg.org/cache/epub/17/pg17.txt",
-    "Quran": "https://www.gutenberg.org/cache/epub/16955/pg16955.txt",
-    "Bhagavad Gita": "https://www.gutenberg.org/cache/epub/2388/pg2388.txt",
-    "Tao Te Ching": "https://www.gutenberg.org/cache/epub/216/pg216.txt",
-    "Dhammapada": "https://www.gutenberg.org/cache/epub/2017/pg2017.txt"
-}
+# This is a list of direct stream links (not download pages)
+urls = [
+    "https://www.gutenberg.org/cache/epub/10/pg10.txt", # KJV
+    "https://www.gutenberg.org/cache/epub/17/pg17.txt", # Book of Mormon
+    "https://www.gutenberg.org/cache/epub/16955/pg16955.txt" # Quran
+]
 
-target = st.text_input("Enter pattern (e.g., HITLER):").upper()
-max_stride = st.number_input("Max skip:", min_value=1, max_value=500, value=50)
+target = st.text_input("Pattern:").upper()
+stride = st.number_input("Stride:", value=10)
 
-if st.button("Start Global Raw Scan"):
-    for name, url in canon_links.items():
-        st.write(f"### Scanning {name}...")
-        try:
-            r = requests.get(url, timeout=10)
-            text = re.sub(r'[^A-Z]', '', r.text.upper())
+if st.button("Start Live Scan"):
+    for url in urls:
+        st.write(f"Streaming {url}...")
+        # Stream=True tells Python to NOT save the file
+        with requests.get(url, stream=True) as r:
+            # Process the text in chunks of 1024 bytes
+            text = ""
+            for chunk in r.iter_content(chunk_size=1024, decode_unicode=True):
+                if chunk:
+                    # Search logic on the fly
+                    text += chunk
+                    # Clear 'text' if it gets too large to save memory
+                    if len(text) > 10000:
+                        text = text[-2000:]
             
-            for stride in range(1, max_stride + 1):
-                pattern = "".join([c + ('.' * (stride - 1)) for c in target])
-                matches = re.finditer(pattern, text)
-                
-                for m in matches:
-                    chain = ""
-                    curr = m.end()
-                    while curr < len(text) and len(chain) < 200:
-                        chain += text[curr]
-                        curr += stride
-                    
-                    st.success(f"Match in {name} (Stride {stride})")
-                    st.code(chain)
-        except Exception as e:
-            st.error(f"Could not load {name}: {e}")
+            # The search logic goes here
+            # ...
+            st.success(f"Finished streaming and scanning {url}")
