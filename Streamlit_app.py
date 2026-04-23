@@ -15,16 +15,16 @@ word_list = get_word_list()
 
 st.title("Universal ELS Archive Scanner")
 
-# Pre-populated sources
+# Pre-populated full URLs for reliability
 default_sources = (
-    "https://www.gutenberg.org/ebooks/search/?query=bible\n"
-    "https://www.gutenberg.org/ebooks/search/?query=quran\n"
-    "https://www.gutenberg.org/ebooks/search/?query=enoch\n"
-    "https://www.gutenberg.org/ebooks/search/?query=jubilees"
+    "https://www.gutenberg.org/ebooks/search/?query=King+James+Bible\n"
+    "https://www.gutenberg.org/ebooks/search/?query=Quran\n"
+    "https://www.gutenberg.org/ebooks/search/?query=Enoch\n"
+    "https://www.gutenberg.org/ebooks/search/?query=Jubilees"
 )
 
 name_to_search = st.text_input("Name/Pattern:", "CURT STREHLAU").upper().replace(" ", "")
-sources = st.text_area("Source URLs (Gutenberg Search Pages):", default_sources, height=150)
+sources_input = st.text_area("Full Source URLs (Gutenberg):", default_sources, height=200)
 min_stride = st.number_input("Min Stride:", value=1)
 max_stride = st.number_input("Max Stride:", value=500)
 
@@ -41,20 +41,33 @@ def colorize(sequence):
     return "".join(formatted)
 
 if st.button("Scan All Sources & Save Results"):
-    links = []
-    for root in sources.split('\n'):
-        try:
-            soup = BeautifulSoup(requests.get(root.strip(), timeout=10).text, 'html.parser')
-            for a in soup.find_all('a', href=re.compile(r'/ebooks/\d+')):
-                if 'txt' in a.get('href', ''): # Simple filter for text files
-                    links.append("https://www.gutenberg.org" + a['href'])
-        except: continue
+    # Clean the input to ignore empty lines or accidental breaks
+    urls = [line.strip() for line in sources_input.split('\n') if line.strip().startswith('http')]
     
-    st.write(f"Scanning {len(links)} documents...")
+    links = []
+    for root in urls:
+        try:
+            # Add headers to avoid being blocked
+            headers = {'User-Agent': 'Mozilla/5.0'}
+            response = requests.get(root, headers=headers, timeout=10)
+            soup = BeautifulSoup(response.text, 'html.parser')
+            # Extract links to raw text files
+            for a in soup.find_all('a', href=re.compile(r'/ebooks/\d+')):
+                book_url = "https://www.gutenberg.org" + a['href']
+                # Get the actual .txt file link for that book
+                book_page = requests.get(book_url, headers=headers, timeout=10)
+                txt_match = re.search(r'href="(.*\.txt)"', book_page.text)
+                if txt_match:
+                    links.append(txt_match.group(1))
+        except Exception as e:
+            st.warning(f"Skipping a source due to error: {e}")
+            continue
+    
+    st.write(f"Found {len(links)} books. Scanning...")
     
     for link in links:
         try:
-            text = requests.get(link, timeout=10).text.upper()
+            text = requests.get(link, headers=headers, timeout=10).text.upper()
             clean_text = re.sub(r'[^A-Z]', '', text)
             
             for start in [m.start() for m in re.finditer(name_to_search[0], clean_text)]:
@@ -67,7 +80,6 @@ if st.button("Scan All Sources & Save Results"):
                     
                     if match:
                         result_str = f"Match in {link} at stride {stride}\nSequence: {clean_text[start : start + (len(name_to_search)*stride)]}"
-                        st.success(f"Match found!")
                         st.markdown(colorize(clean_text[start : start + (len(name_to_search)*stride)]))
                         results_log.append(result_str)
         except: continue
@@ -82,4 +94,4 @@ if st.button("Scan All Sources & Save Results"):
             mime="text/plain"
         )
     else:
-        st.warning("No matches found.")
+        st.warning("No matches found in the selected range.")
