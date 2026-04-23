@@ -3,9 +3,8 @@ import requests
 import re
 import nltk
 from nltk.corpus import words
-from bs4 import BeautifulSoup
 
-# Setup: Download dictionary once
+# Setup
 @st.cache_resource
 def get_word_list():
     nltk.download('words', quiet=True)
@@ -13,17 +12,16 @@ def get_word_list():
 
 word_list = get_word_list()
 
-st.title("Universal ELS Name & Pattern Hunter")
+st.title("API-Based ELS Scanner")
 
-# Inputs
-roots = st.text_area("Root URLs to scan (one per line):", 
-                     "https://www.gutenberg.org/ebooks/search/?query=bible\nhttps://www.gutenberg.org/ebooks/subject/7")
+# UI Inputs
 name_to_search = st.text_input("Name/Pattern to Search:", "CURT STREHLAU").upper()
+book_chapter = st.text_input("Bible Book & Chapter (e.g., John 1):", "Genesis 1")
 min_stride = st.number_input("Min Stride:", value=1)
-max_stride = st.number_input("Max Stride:", value=5000)
+max_stride = st.number_input("Max Stride:", value=100)
 
 def colorize(sequence):
-    """Groups text into words and highlights dictionary words in blue."""
+    """Highlights dictionary words found in the sequence in blue."""
     tokens = re.split(r'([^a-zA-Z0-9])', sequence)
     formatted = []
     for t in tokens:
@@ -33,43 +31,38 @@ def colorize(sequence):
             formatted.append(t)
     return "".join(formatted)
 
-if st.button("Execute Full Scan"):
-    # Crawler Logic
-    all_links = []
-    for root in roots.split('\n'):
-        try:
-            response = requests.get(root.strip(), timeout=10)
-            soup = BeautifulSoup(response.text, 'html.parser')
-            links = ["https://www.gutenberg.org" + a['href'] for a in soup.find_all('a', href=re.compile(r'\.txt$'))]
-            all_links.extend(links)
-        except:
-            st.error(f"Could not reach {root}")
+if st.button("Scan API Data"):
+    # API Call
+    url = f"https://bible-api.com/{book_chapter}"
+    response = requests.get(url)
     
-    st.write(f"Total files found: {len(all_links)}")
-    progress = st.progress(0)
-    
-    # Optimized Scan
-    for i, link in enumerate(all_links):
-        try:
-            text = requests.get(link, timeout=5).text.upper()
-            clean_text = re.sub(r'[^A-Z]', '', text)
-            name = name_to_search.replace(" ", "")
-            
-            # Jump to occurrences of the first letter
-            first_char = name[0]
-            for start in [m.start() for m in re.finditer(first_char, clean_text)]:
-                for stride in range(min_stride, max_stride + 1):
-                    if start + (len(name) * stride) >= len(clean_text):
+    if response.status_code == 200:
+        data = response.json()
+        full_text = data['text'].upper()
+        clean_text = re.sub(r'[^A-Z]', '', full_text)
+        name = name_to_search.replace(" ", "")
+        
+        st.write(f"Scanning {book_chapter}...")
+        
+        found = False
+        first_char = name[0]
+        for start in [m.start() for m in re.finditer(first_char, clean_text)]:
+            for stride in range(min_stride, max_stride + 1):
+                if start + (len(name) * stride) >= len(clean_text):
+                    break
+                
+                match = True
+                for idx, char in enumerate(name):
+                    if clean_text[start + (idx * stride)] != char:
+                        match = False
                         break
-                    
-                    match = True
-                    for idx, char in enumerate(name):
-                        if clean_text[start + (idx * stride)] != char:
-                            match = False
-                            break
-                    if match:
-                        st.success(f"MATCH FOUND: {name_to_search} at Stride {stride} in {link}")
-                        st.markdown(colorize(clean_text[start : start + (len(name)*stride)]))
-        except:
-            continue
-        progress.progress((i + 1) / len(all_links))
+                
+                if match:
+                    found = True
+                    st.success(f"MATCH: {name_to_search} at Stride {stride}")
+                    st.markdown(colorize(clean_text[start : start + (len(name)*stride)]))
+        
+        if not found:
+            st.warning("No ELS match found in this chapter with current settings.")
+    else:
+        st.error("Could not reach Bible API. Check your book/chapter format.")
